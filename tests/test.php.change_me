@@ -1,0 +1,24 @@
+<?php
+
+use macropage\ebaysdk\trading\upload\upload_images;
+
+require_once 'vendor/autoload.php';
+
+$images[] = file_get_contents('/tmp2/img_data_main.png');
+$images[] = file_get_contents('/tmp2/img_data_2.png');
+//$images[] = 'this should not work';
+
+//$xml_result = simplexml_load_string(file_get_contents('tests/ebay_response_ok.xml'));
+//d((string)$xml_result->Ack);
+//exit;
+
+$EbayUploadImages = new upload_images([
+										  'app-name'   => 'xxxxxxxx',
+										  'cert-name'  => 'xxxxxxxx',
+										  'dev-name'   => 'xxxxxxxx',
+										  'siteid'     => 77,
+										  'auth-token' => 'xxxxxxxx'
+									  ]);
+$responses        = $EbayUploadImages->upload($images);
+d($responses);
+

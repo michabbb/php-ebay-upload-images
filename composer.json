@@ -1,0 +1,24 @@
+{
+  "name": "macropage-sdk/ebay-trading-upload-images",
+  "description": "a little helper to upload images to ebays EPS (eBay Picture Services)",
+  "authors": [
+    {
+      "name": "Michael Bladowski",
+      "email": "mbladowski@macropage.de"
+    }
+  ],
+  "prefer-stable": true,
+  "require": {
+    "php": ">=5.5",
+    "guzzlehttp/guzzle": "^6.3"
+  },
+  "require-dev": {
+    "roave/security-advisories": "dev-master",
+    "kint-php/kint": "^3.2"
+  },
+  "autoload": {
+    "classmap": [
+      "upload_images.php"
+    ]
+  }
+}
