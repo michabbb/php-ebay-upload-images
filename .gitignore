@@ -1,1 +1,4 @@
 tests/test.php
+vendor
+composer.lock
+.idea
