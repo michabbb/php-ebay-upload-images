@@ -24,7 +24,7 @@ class upload_images {
 				throw new RuntimeException('missing config key: ' . $config);
 			}
 		}
-		$api_uri                   = $live ? 'https://api.ebay.com/' : 'https://https://api.ebay.com/';
+		$api_uri                   = $live ? 'https://api.ebay.com/' : 'https://api.sandbox.ebay.com/';
 		$debug                     = (array_key_exists('debug', $config) && $config['debug']);
 		$config['concurrency']     = array_key_exists('concurrency', $config) && $config['concurrency'] ? $config['concurrency'] : 10;
 		$config['comp-level']      = array_key_exists('comp-level', $config) && $config['comp-level'] ? $config['comp-level'] : 1113;
