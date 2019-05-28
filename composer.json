@@ -7,6 +7,7 @@
       "email": "mbladowski@macropage.de"
     }
   ],
+  "license": "MIT",
   "prefer-stable": true,
   "require": {
     "php": ">=5.5",
