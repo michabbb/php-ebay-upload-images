@@ -29,3 +29,14 @@ some more config keys you can use:
 - concurrency (number of parallel uploads)
 - comp-level (X-EBAY-API-COMPATIBILITY-LEVEL)
 - ExtensionInDays ([see ebay docu](https://developer.ebay.com/devzone/xml/docs/reference/ebay/UploadSiteHostedPictures.html#Request.ExtensionInDays))
+
+### You need help with the Ebay API?
+
+**hire me:** `info@macropage.de`
+
+[![Follow me](https://rawcdn.githack.com/michabbb/ebay-oauth-playground/b4eaa137aa00ff700ac18880baa0002c661857e6/docs/img/linkedin.png)](https://twitter.com/michabbb)  
+
+[![Follow me](https://rawcdn.githack.com/michabbb/ebay-oauth-playground/b4eaa137aa00ff700ac18880baa0002c661857e6/docs/img/twitter.png)](https://www.linkedin.com/in/macropage/)
+
+[![Follow me](https://rawcdn.githack.com/michabbb/ebay-oauth-playground/b4eaa137aa00ff700ac18880baa0002c661857e6/docs/img/xing.png)](https://xing.com/profile/Michael_Bladowski/cv)
+
