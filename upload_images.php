@@ -1,8 +1,11 @@
 <?php
+
 namespace macropage\ebaysdk\trading\upload;
+
 use GuzzleHttp\Client;
 use GuzzleHttp\Pool;
 use GuzzleHttp\Psr7\Response;
+use RuntimeException;
 
 class upload_images {
 
@@ -18,11 +21,11 @@ class upload_images {
 	public function __construct(array $config, $live = true) {
 		foreach (['app-name', 'cert-name', 'dev-name', 'siteid', 'auth-token'] as $key) {
 			if (!array_key_exists($key, $config)) {
-				throw new \RuntimeException('missing config key: ' . $config);
+				throw new RuntimeException('missing config key: ' . $config);
 			}
 		}
 		$api_uri                   = $live ? 'https://api.ebay.com/' : 'https://https://api.ebay.com/';
-		$debug                     = array_key_exists('debug', $config) && $config['debug'] ? true : false;
+		$debug                     = (array_key_exists('debug', $config) && $config['debug']);
 		$config['concurrency']     = array_key_exists('concurrency', $config) && $config['concurrency'] ? $config['concurrency'] : 10;
 		$config['comp-level']      = array_key_exists('comp-level', $config) && $config['comp-level'] ? $config['comp-level'] : 1113;
 		$config['ExtensionInDays'] = array_key_exists('ExtensionInDays', $config) && $config['ExtensionInDays'] ? $config['ExtensionInDays'] : 30;
@@ -40,9 +43,9 @@ class upload_images {
 	public function upload(array $images) {
 		$client   = $this->client;
 		$config   = $this->config;
-		$requests = function ($images) use ($client, $config) {
+		$requests = static function ($images) use ($client, $config) {
 			foreach ($images as $imageData) {
-				yield function () use ($client, $imageData, $config) {
+				yield static function () use ($client, $imageData, $config) {
 					return $client->postAsync('/ws/api.dll', [
 						'headers'   => [
 							'X-EBAY-API-APP-NAME'            => $config['app-name'],
@@ -80,12 +83,12 @@ class upload_images {
 
 		$pool = new Pool($client, $requests($images), [
 			'concurrency' => $this->config['concurrency'],
-			'fulfilled'   => function (Response $response, $index) use (&$responses) {
+			'fulfilled'   => static function (Response $response, $index) use (&$responses) {
 				$responses[$index]['response']    = $response;
 				$parsedResponse                   = simplexml_load_string($response->getBody()->getContents());
 				$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse), TRUE);
 			},
-			'rejected'    => function ($reason, $index) {
+			'rejected'    => static function ($reason, $index) {
 				$responses[$index]['reason'] = $reason;
 			},
 		]);
@@ -93,6 +96,7 @@ class upload_images {
 		$promise = $pool->promise();
 		// Force the pool of requests to complete
 		$promise->wait();
+
 		return $this->parseResponses($responses);
 	}
 
