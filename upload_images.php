@@ -106,7 +106,6 @@ class upload_images {
 	private function parseResponses(array $responses) {
 		$responses_parsed = [];
 		foreach ($responses as $index => $response) {
-			d($response);
 			if (array_key_exists('reason', $response)) {
 				return ['state' => false, 'index' => $index, 'error' => $response['reason']];
 			}
