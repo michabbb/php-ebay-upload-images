@@ -18,6 +18,8 @@ $responses        = $EbayUploadImages->upload($images);
 d($responses);
 ```
 
+![#f03c15](https://placehold.it/15/f03c15/000000?text=+) **notice:** `siteid` needs to be numbers, if you use letters you might get very strange SSL errors! 
+
 ### what you (should) get
 
 ![](https://i.imgur.com/6mNud71.png)
