@@ -23,6 +23,9 @@ class upload_images {
 			if (!array_key_exists($key, $config)) {
 				throw new RuntimeException('missing config key: ' . $config);
 			}
+			if ($key === 'siteid' &&  !preg_match('/^\d+$/', $config[$key])) {
+				throw new RuntimeException('for siteid please use numbers, not letters!');
+			}
 		}
 		$api_uri                   = $live ? 'https://api.ebay.com/' : 'https://api.sandbox.ebay.com/';
 		$debug                     = (array_key_exists('debug', $config) && $config['debug']);
