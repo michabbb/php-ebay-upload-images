@@ -3,7 +3,9 @@
 namespace macropage\ebaysdk\trading\upload;
 
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Pool;
+use GuzzleHttp\Promise\Promise;
 use GuzzleHttp\Psr7\Response;
 use RuntimeException;
 
@@ -11,6 +13,7 @@ class upload_images {
 
 	private $config;
 	private $client;
+	private $requests;
 
 	/**
 	 * uploadImages constructor.
@@ -23,7 +26,7 @@ class upload_images {
 			if (!array_key_exists($key, $config)) {
 				throw new RuntimeException('missing config key: ' . $config);
 			}
-			if ($key === 'siteid' &&  !preg_match('/^\d+$/', $config[$key])) {
+			if ($key === 'siteid' && !preg_match('/^\d+$/', $config[$key])) {
 				throw new RuntimeException('for siteid please use numbers, not letters!');
 			}
 		}
@@ -44,55 +47,71 @@ class upload_images {
 		$this->client = $client;
 	}
 
-	public function upload(array $images) {
-		$client   = $this->client;
-		$config   = $this->config;
-		$requests = static function ($images) use ($client, $config) {
-			foreach ($images as $index => $imageData) {
-				yield static function () use ($client, $imageData, $config, $index) {
-					return $client->postAsync('/ws/api.dll', [
-						'headers'   => [
-							'X-EBAY-API-APP-NAME'            => $config['app-name'],
-							'X-EBAY-API-CERT-NAME'           => $config['cert-name'],
-							'X-EBAY-API-DEV-NAME'            => $config['dev-name'],
-							'X-EBAY-API-CALL-NAME'           => 'UploadSiteHostedPictures',
-							'X-EBAY-API-COMPATIBILITY-LEVEL' => $config['comp-level'],
-							'X-EBAY-API-SITEID'              => $config['siteid']
-						],
-						'multipart' => [
-							[
-								'name'     => 'xml payload',
-								'contents' => '<?xml version="1.0" encoding="utf-8"?>
+	public function prepareRequest($images) {
+		foreach ($images as $index => $imageData) {
+			$this->requests[$index] = $this->client->requestAsync('POST','/ws/api.dll', [
+				'headers'   => [
+					'X-MY-INDEX'                     => $index,
+					'X-EBAY-API-APP-NAME'            => $this->config['app-name'],
+					'X-EBAY-API-CERT-NAME'           => $this->config['cert-name'],
+					'X-EBAY-API-DEV-NAME'            => $this->config['dev-name'],
+					'X-EBAY-API-CALL-NAME'           => 'UploadSiteHostedPictures',
+					'X-EBAY-API-COMPATIBILITY-LEVEL' => $this->config['comp-level'],
+					'X-EBAY-API-SITEID'              => $this->config['siteid']
+				],
+				'multipart' => [
+					[
+						'name'     => 'xml payload',
+						'contents' => '<?xml version="1.0" encoding="utf-8"?>
 <UploadSiteHostedPicturesRequest xmlns="urn:ebay:apis:eBLBaseComponents">
     <RequesterCredentials>
-        <ebl:eBayAuthToken xmlns:ebl="urn:ebay:apis:eBLBaseComponents">' . $config['auth-token'] . '</ebl:eBayAuthToken>
+        <ebl:eBayAuthToken xmlns:ebl="urn:ebay:apis:eBLBaseComponents">' . $this->config['auth-token'] . '</ebl:eBayAuthToken>
     </RequesterCredentials>
     <PictureName>'.$index.'</PictureName>
     <PictureSet>Standard</PictureSet>
-    <ExtensionInDays>' . $config['ExtensionInDays'] . '</ExtensionInDays>
+    <ExtensionInDays>' . $this->config['ExtensionInDays'] . '</ExtensionInDays>
+    <MessageID>'.$index.'</MessageID>
 </UploadSiteHostedPicturesRequest>',
-							],
-							[
-								'name'     => 'image data',
-								'filename' => 'doesntmatter',
-								'contents' => $imageData,
-							]
-						]
-					]);
+					],
+					[
+						'name'     => 'image data',
+						'filename' => 'doesntmatter',
+						'contents' => $imageData,
+					]
+				]
+			]);
+		}
+	}
+
+	public function upload(array $images) {
+		$this->prepareRequest($images);
+		$prepared_requests = $this->requests;
+
+		$requests = function () use ($prepared_requests) {
+			foreach ($prepared_requests as $index => $request) {
+				/** @var Promise $request */
+				yield function () use ($request, $index) {
+					return $request->then(function (Response $response) use ($index) {
+						$response->_index = $index;
+						return $response;
+					});
 				};
 			}
 		};
 
 		$responses = [];
 
-		$pool = new Pool($client, $requests($images), [
+		$pool = new Pool($this->client, $requests(), [
 			'concurrency' => $this->config['concurrency'],
-			'fulfilled'   => static function (Response $response, $index) use (&$responses) {
-				$responses[$index]['response']    = $response;
-				$parsedResponse                   = simplexml_load_string($response->getBody()->getContents());
-				$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse), TRUE);
+			'fulfilled'   => function (Response $response) use (&$responses) {
+				/** @noinspection PhpUndefinedFieldInspection */
+				$index = $response->_index;
+				$responses[$index]['response'] = $response;
+				$parsedResponse                           = simplexml_load_string($response->getBody()->getContents());
+				$responses[$index]['parsed_body']         = json_decode(json_encode((array)$parsedResponse), TRUE);
 			},
-			'rejected'    => static function ($reason, $index) {
+			'rejected'    => function (RequestException $reason) {
+				$index = $reason->getRequest()->getHeaders()['X-MY-INDEX'][0];
 				$responses[$index]['reason'] = $reason;
 			},
 		]);
@@ -101,79 +120,42 @@ class upload_images {
 		// Force the pool of requests to complete
 		$promise->wait();
 
+		if (!count($responses)) {
+			throw new \RuntimeException('unable to get any responses');
+		}
+
 		return $this->parseResponses($responses);
+	}
+
+	private function returnFalse($error,&$global_state) {
+		$global_state = false;
+		return ['state' => false, 'error' => $error];
 	}
 
 	private function parseResponses(array $responses) {
 		$responses_parsed = [];
+		$global_state     = true;
+
 		foreach ($responses as $index => $response) {
 			if (array_key_exists('reason', $response)) {
-				return ['state' => false, 'index' => $index, 'error' => $response['reason']];
+				$responses_parsed[$index] = $this->returnFalse($response['reason'],$global_state);
+				continue;
 			}
 			if (!array_key_exists('response', $response)) {
-				return ['state' => false, 'index' => $index, 'error' => 'missing response'];
+				$responses_parsed[$index] = $this->returnFalse('missing response', $global_state);
+				continue;
 			}
 			if (!array_key_exists('parsed_body', $response)) {
-				return ['state' => false, 'index' => $index, 'error' => 'missing parsed_body: unable to read xml?'];
+				$responses_parsed[$index] = $this->returnFalse('missing parsed_body: unable to read xml?',$global_state);
+				continue;
 			}
 			if ($response['parsed_body']['Ack'] !== 'Success') {
-				return ['state' => false, 'index' => $index, 'error' => $response['parsed_body']['Errors']];
+				$responses_parsed[$index] = $this->returnFalse($response['parsed_body']['Errors'],$global_state);
+				continue;
 			}
 			$responses_parsed[$index] = $response['parsed_body']['SiteHostedPictureDetails'];
 		}
-		return ['state' => true, 'responses' => $this->rewriteIndex($responses_parsed)];
+		return ['state' => $global_state, 'responses' => $responses_parsed];
 	}
-
-    /**
-     * in case you use an image of arrays with a random numbering, like
-     *
-     * $images = [
-     *     1 => ....img-data....,
-     *     5 => ....img-data....,
-     *     8 => ....img-data....,
-     *     4 => ....img-data....,
-     * ]
-     *
-     * you get the same keys back in your global response array
-     * in that case you are able to match the ebay result to your
-     * image-data
-     *
-     * you will get:
-     *
-     * $responses = [
-     *    1 => response,
-     *    4 => response,
-     *    5 => response,
-     *    8 => response,
-     * ]
-     *
-     * instead of
-     *
-     * $responses = [
-     *    0 => response,
-     *    1 => response,
-     *    2 => response,
-     *    3 => response,
-     * ]
-     *
-     * why ? because we asume that you want a special order of your images in your ebay item ;)
-     * you should be able to use the same order of results for your "PictureURL" in your reviseitem/additem
-     * as you used here for the uploads
-     *
-     * @param array $responses
-     *
-     * @return array
-     */
-	private function rewriteIndex(array $responses) {
-	    if ($this->config['rewrite-index']) {
-	        $new_array = [];
-	        foreach ($responses as $UploadResponse) {
-	            $new_array[(int)$UploadResponse['PictureName']] = $UploadResponse;
-            }
-	        ksort($new_array,SORT_NUMERIC);
-	        return $new_array;
-        }
-	    return $responses;
-    }
 
 }
