@@ -145,11 +145,18 @@ class upload_images {
 				$responses_parsed[$index] = $this->returnFalse('missing parsed_body: unable to read xml?', $global_state);
 				continue;
 			}
-			if ($response['parsed_body']['Ack'] !== 'Success') {
-				$responses_parsed[$index] = $this->returnFalse($response['parsed_body']['Errors'], $global_state);
+			if (in_array($response['parsed_body']['Ack'],['Success','Warning'])) {
+                $responses_parsed[$index] = $response['parsed_body']['SiteHostedPictureDetails'];
+			    if ($response['parsed_body']['Ack']==='Warning') {
+                    $responses_parsed[$index]['Warninng'] = $response['parsed_body']['Errors'];
+                }
 				continue;
 			}
-			$responses_parsed[$index] = $response['parsed_body']['SiteHostedPictureDetails'];
+			if ($response['parsed_body']['Ack']==='Failure') {
+                $responses_parsed[$index] = $this->returnFalse( $response['parsed_body']['Errors'], $global_state);
+                continue;
+            }
+			throw new RuntimeException('unknown response: '.print_r($response,1));
 		}
 
 		return ['state' => $global_state, 'responses' => $responses_parsed];
