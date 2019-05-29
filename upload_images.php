@@ -117,11 +117,10 @@ class upload_images {
 				return ['state' => false, 'index' => $index, 'error' => 'missing parsed_body: unable to read xml?'];
 			}
 			if ($response['parsed_body']['Ack'] !== 'Success') {
-				return ['state' => false, 'index' => $index, 'error' => $response['parsed_body']->Errors];
+				return ['state' => false, 'index' => $index, 'error' => $response['parsed_body']['Errors']];
 			}
 			$responses_parsed[$index] = $response['parsed_body']['SiteHostedPictureDetails'];
 		}
-
 		return ['state' => true, 'responses' => $this->rewriteIndex($responses_parsed)];
 	}
 
