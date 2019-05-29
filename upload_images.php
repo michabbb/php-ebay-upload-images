@@ -47,9 +47,54 @@ class upload_images {
 		$this->client = $client;
 	}
 
+	public function upload(array $images) {
+		$this->prepareRequest($images);
+		$prepared_requests = $this->requests;
+
+		$requests = static function () use ($prepared_requests) {
+			foreach ($prepared_requests as $index => $request) {
+				/** @var Promise $request */
+				yield static function () use ($request, $index) {
+					return $request->then(static function (Response $response) use ($index) {
+						/** @noinspection PhpUndefinedFieldInspection */
+						$response->_index = $index;
+						return $response;
+					});
+				};
+			}
+		};
+
+		$responses = [];
+
+		$pool = new Pool($this->client, $requests(), [
+			'concurrency' => $this->config['concurrency'],
+			'fulfilled'   => static function (Response $response) use (&$responses) {
+				/** @noinspection PhpUndefinedFieldInspection */
+				$index                            = $response->_index;
+				$responses[$index]['response']    = $response;
+				$parsedResponse                   = simplexml_load_string($response->getBody()->getContents());
+				$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse), TRUE);
+			},
+			'rejected'    => static function (RequestException $reason) {
+				$index                       = $reason->getRequest()->getHeaders()['X-MY-INDEX'][0];
+				$responses[$index]['reason'] = $reason;
+			},
+		]);
+		// Initiate the transfers and create a promise
+		$promise = $pool->promise();
+		// Force the pool of requests to complete
+		$promise->wait();
+
+		if (!count($responses)) {
+			throw new RuntimeException('unable to get any responses');
+		}
+
+		return $this->parseResponses($responses);
+	}
+
 	public function prepareRequest($images) {
 		foreach ($images as $index => $imageData) {
-			$this->requests[$index] = $this->client->requestAsync('POST','/ws/api.dll', [
+			$this->requests[$index] = $this->client->requestAsync('POST', '/ws/api.dll', [
 				'headers'   => [
 					'X-MY-INDEX'                     => $index,
 					'X-EBAY-API-APP-NAME'            => $this->config['app-name'],
@@ -67,10 +112,10 @@ class upload_images {
     <RequesterCredentials>
         <ebl:eBayAuthToken xmlns:ebl="urn:ebay:apis:eBLBaseComponents">' . $this->config['auth-token'] . '</ebl:eBayAuthToken>
     </RequesterCredentials>
-    <PictureName>'.$index.'</PictureName>
+    <PictureName>' . $index . '</PictureName>
     <PictureSet>Standard</PictureSet>
     <ExtensionInDays>' . $this->config['ExtensionInDays'] . '</ExtensionInDays>
-    <MessageID>'.$index.'</MessageID>
+    <MessageID>' . $index . '</MessageID>
 </UploadSiteHostedPicturesRequest>',
 					],
 					[
@@ -83,62 +128,13 @@ class upload_images {
 		}
 	}
 
-	public function upload(array $images) {
-		$this->prepareRequest($images);
-		$prepared_requests = $this->requests;
-
-		$requests = function () use ($prepared_requests) {
-			foreach ($prepared_requests as $index => $request) {
-				/** @var Promise $request */
-				yield function () use ($request, $index) {
-					return $request->then(function (Response $response) use ($index) {
-						$response->_index = $index;
-						return $response;
-					});
-				};
-			}
-		};
-
-		$responses = [];
-
-		$pool = new Pool($this->client, $requests(), [
-			'concurrency' => $this->config['concurrency'],
-			'fulfilled'   => function (Response $response) use (&$responses) {
-				/** @noinspection PhpUndefinedFieldInspection */
-				$index = $response->_index;
-				$responses[$index]['response'] = $response;
-				$parsedResponse                           = simplexml_load_string($response->getBody()->getContents());
-				$responses[$index]['parsed_body']         = json_decode(json_encode((array)$parsedResponse), TRUE);
-			},
-			'rejected'    => function (RequestException $reason) {
-				$index = $reason->getRequest()->getHeaders()['X-MY-INDEX'][0];
-				$responses[$index]['reason'] = $reason;
-			},
-		]);
-		// Initiate the transfers and create a promise
-		$promise = $pool->promise();
-		// Force the pool of requests to complete
-		$promise->wait();
-
-		if (!count($responses)) {
-			throw new \RuntimeException('unable to get any responses');
-		}
-
-		return $this->parseResponses($responses);
-	}
-
-	private function returnFalse($error,&$global_state) {
-		$global_state = false;
-		return ['state' => false, 'error' => $error];
-	}
-
 	private function parseResponses(array $responses) {
 		$responses_parsed = [];
 		$global_state     = true;
 
 		foreach ($responses as $index => $response) {
 			if (array_key_exists('reason', $response)) {
-				$responses_parsed[$index] = $this->returnFalse($response['reason'],$global_state);
+				$responses_parsed[$index] = $this->returnFalse($response['reason'], $global_state);
 				continue;
 			}
 			if (!array_key_exists('response', $response)) {
@@ -146,16 +142,23 @@ class upload_images {
 				continue;
 			}
 			if (!array_key_exists('parsed_body', $response)) {
-				$responses_parsed[$index] = $this->returnFalse('missing parsed_body: unable to read xml?',$global_state);
+				$responses_parsed[$index] = $this->returnFalse('missing parsed_body: unable to read xml?', $global_state);
 				continue;
 			}
 			if ($response['parsed_body']['Ack'] !== 'Success') {
-				$responses_parsed[$index] = $this->returnFalse($response['parsed_body']['Errors'],$global_state);
+				$responses_parsed[$index] = $this->returnFalse($response['parsed_body']['Errors'], $global_state);
 				continue;
 			}
 			$responses_parsed[$index] = $response['parsed_body']['SiteHostedPictureDetails'];
 		}
+
 		return ['state' => $global_state, 'responses' => $responses_parsed];
+	}
+
+	private function returnFalse($error, &$global_state) {
+		$global_state = false;
+
+		return ['state' => false, 'error' => $error];
 	}
 
 }
