@@ -148,7 +148,7 @@ class upload_images {
 			if (in_array($response['parsed_body']['Ack'],['Success','Warning'])) {
                 $responses_parsed[$index] = $response['parsed_body']['SiteHostedPictureDetails'];
 			    if ($response['parsed_body']['Ack']==='Warning') {
-                    $responses_parsed[$index]['Warninng'] = $response['parsed_body']['Errors'];
+                    $responses_parsed[$index]['Warning'] = $response['parsed_body']['Errors'];
                 }
 				continue;
 			}
