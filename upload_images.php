@@ -47,6 +47,12 @@ class upload_images {
 		$this->client = $client;
 	}
 
+	/**
+	 * @param array $images
+	 *
+	 * @throws RuntimeException
+	 * @return array
+	 */
 	public function upload(array $images) {
 		$this->prepareRequest($images);
 		$prepared_requests = $this->requests;
@@ -92,7 +98,10 @@ class upload_images {
 		return $this->parseResponses($responses);
 	}
 
-	public function prepareRequest($images) {
+	/**
+	 * @param $images
+	 */
+	public function prepareRequest(array $images) {
 		foreach ($images as $index => $imageData) {
 			$this->requests[$index] = $this->client->requestAsync('POST', '/ws/api.dll', [
 				'headers'   => [
@@ -128,6 +137,11 @@ class upload_images {
 		}
 	}
 
+	/**
+	 * @param array $responses
+	 *
+	 * @return array
+	 */
 	private function parseResponses(array $responses) {
 		$responses_parsed = [];
 		$global_state     = true;
@@ -162,6 +176,12 @@ class upload_images {
 		return ['state' => $global_state, 'responses' => $responses_parsed];
 	}
 
+	/**
+	 * @param $error
+	 * @param $global_state
+	 *
+	 * @return array
+	 */
 	private function returnFalse($error, &$global_state) {
 		$global_state = false;
 
