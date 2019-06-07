@@ -14,6 +14,7 @@ class upload_images {
 	private $config;
 	private $client;
 	private $requests;
+	private $debug;
 
 	/**
 	 * uploadImages constructor.
@@ -31,13 +32,13 @@ class upload_images {
 			}
 		}
 		$api_uri                   = $live ? 'https://api.ebay.com/' : 'https://api.sandbox.ebay.com/';
-		$debug                     = (array_key_exists('debug', $config) && $config['debug']);
+		$this->debug               = (array_key_exists('debug', $config) && $config['debug']);
 		$config['concurrency']     = array_key_exists('concurrency', $config) && $config['concurrency'] ? $config['concurrency'] : 10;
 		$config['comp-level']      = array_key_exists('comp-level', $config) && $config['comp-level'] ? $config['comp-level'] : 1113;
 		$config['ExtensionInDays'] = array_key_exists('ExtensionInDays', $config) && $config['ExtensionInDays'] ? $config['ExtensionInDays'] : 30;
 		$config['rewrite-index']   = array_key_exists('rewrite-index', $config) && $config['rewrite-index'] ? $config['rewrite-index'] : true;
 		$this->config              = $config;
-		$this->client              = new Client(['base_uri' => $api_uri, 'debug' => $debug]);
+		$this->client              = new Client(['base_uri' => $api_uri, 'debug' => $this->debug]);
 	}
 
 	/**
@@ -78,7 +79,8 @@ class upload_images {
 				/** @noinspection PhpUndefinedFieldInspection */
 				$index                            = $response->_index;
 				$responses[$index]['response']    = $response;
-				$parsedResponse                   = simplexml_load_string($response->getBody()->getContents());
+				$bodyContents = $response->getBody()->getContents();
+				$parsedResponse                   = simplexml_load_string($bodyContents);
 				$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse), TRUE);
 			},
 			'rejected'    => static function (RequestException $reason) {
@@ -155,7 +157,11 @@ class upload_images {
 				$responses_parsed[$index] = $this->returnFalse('missing response', $global_state);
 				continue;
 			}
-			if (!array_key_exists('parsed_body', $response)) {
+			if (
+				!array_key_exists('parsed_body', $response)
+				||
+				!array_key_exists('Ack',$response['parsed_body'])
+			) {
 				$responses_parsed[$index] = $this->returnFalse('missing parsed_body: unable to read xml?', $global_state);
 				continue;
 			}
@@ -170,6 +176,12 @@ class upload_images {
                 $responses_parsed[$index] = $this->returnFalse( $response['parsed_body']['Errors'], $global_state);
                 continue;
             }
+			/** @var $reponse_original \GuzzleHttp\Psr7\Response */
+			$reponse_original = $response['response'];
+			if ($this->debug) {
+				d($reponse_original->getBody()->getContents());
+				d($reponse_original->getHeaders());
+			}
 			throw new RuntimeException('unknown response: '.print_r($response,1));
 		}
 
