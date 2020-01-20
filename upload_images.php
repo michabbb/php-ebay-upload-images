@@ -131,7 +131,6 @@ class upload_images {
 					],
 					[
 						'name'     => 'image data',
-						'filename' => 'doesntmatter',
 						'contents' => $imageData,
 					]
 				]
@@ -166,8 +165,11 @@ class upload_images {
 				continue;
 			}
 			if (in_array($response['parsed_body']['Ack'],['Success','Warning'])) {
-                $responses_parsed[$index] = $response['parsed_body']['SiteHostedPictureDetails'];
-			    if ($response['parsed_body']['Ack']==='Warning') {
+
+				$responses_parsed[$index]          = $response['parsed_body']['SiteHostedPictureDetails'];
+				$responses_parsed[$index]['state'] = true;
+
+				if ($response['parsed_body']['Ack']==='Warning') {
                     $responses_parsed[$index]['Warning'] = $response['parsed_body']['Errors'];
                 }
 				continue;
