@@ -4,16 +4,12 @@ namespace macropage\ebaysdk\trading\upload;
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
-use GuzzleHttp\Pool;
-use GuzzleHttp\Promise\Promise;
-use GuzzleHttp\Psr7\Response;
 use RuntimeException;
 
 class upload_images {
 
 	private $config;
 	private $client;
-	private $requests;
 	private $debug;
 
 	/**
@@ -33,7 +29,6 @@ class upload_images {
 		}
 		$api_uri                   = $live ? 'https://api.ebay.com/' : 'https://api.sandbox.ebay.com/';
 		$this->debug               = (array_key_exists('debug', $config) && $config['debug']);
-		$config['concurrency']     = array_key_exists('concurrency', $config) && $config['concurrency'] ? $config['concurrency'] : 10;
 		$config['comp-level']      = array_key_exists('comp-level', $config) && $config['comp-level'] ? $config['comp-level'] : 1113;
 		$config['ExtensionInDays'] = array_key_exists('ExtensionInDays', $config) && $config['ExtensionInDays'] ? $config['ExtensionInDays'] : 30;
 		$config['rewrite-index']   = array_key_exists('rewrite-index', $config) && $config['rewrite-index'] ? $config['rewrite-index'] : true;
@@ -55,43 +50,8 @@ class upload_images {
 	 * @return array
 	 */
 	public function upload(array $images) {
-		$this->prepareRequest($images);
-		$prepared_requests = $this->requests;
-
-		$requests = static function () use ($prepared_requests) {
-			foreach ($prepared_requests as $index => $request) {
-				/** @var Promise $request */
-				yield static function () use ($request, $index) {
-					return $request->then(static function (Response $response) use ($index) {
-						/** @noinspection PhpUndefinedFieldInspection */
-						$response->_index = $index;
-						return $response;
-					});
-				};
-			}
-		};
-
-		$responses = [];
-
-		$pool = new Pool($this->client, $requests(), [
-			'concurrency' => $this->config['concurrency'],
-			'fulfilled'   => static function (Response $response) use (&$responses) {
-				/** @noinspection PhpUndefinedFieldInspection */
-				$index                            = $response->_index;
-				$responses[$index]['response']    = $response;
-				$bodyContents = $response->getBody()->getContents();
-				$parsedResponse                   = simplexml_load_string($bodyContents);
-				$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse), TRUE);
-			},
-			'rejected'    => static function (RequestException $reason) {
-				$index                       = $reason->getRequest()->getHeaders()['X-MY-INDEX'][0];
-				$responses[$index]['reason'] = $reason;
-			},
-		]);
-		// Initiate the transfers and create a promise
-		$promise = $pool->promise();
-		// Force the pool of requests to complete
-		$promise->wait();
+		$responses = $this->uploadImages($images);
+		$this->parseResponses($responses);
 
 		if (!count($responses)) {
 			throw new RuntimeException('unable to get any responses');
@@ -101,24 +61,29 @@ class upload_images {
 	}
 
 	/**
-	 * @param $images
+	 * @param array $images
+	 *
+	 * @return array
+	 * @throws \GuzzleHttp\Exception\GuzzleException
 	 */
-	public function prepareRequest(array $images) {
+	public function uploadImages(array $images) {
+		$responses = [];
 		foreach ($images as $index => $imageData) {
-			$this->requests[$index] = $this->client->requestAsync('POST', '/ws/api.dll', [
-				'headers'   => [
-					'X-MY-INDEX'                     => $index,
-					'X-EBAY-API-APP-NAME'            => $this->config['app-name'],
-					'X-EBAY-API-CERT-NAME'           => $this->config['cert-name'],
-					'X-EBAY-API-DEV-NAME'            => $this->config['dev-name'],
-					'X-EBAY-API-CALL-NAME'           => 'UploadSiteHostedPictures',
-					'X-EBAY-API-COMPATIBILITY-LEVEL' => $this->config['comp-level'],
-					'X-EBAY-API-SITEID'              => $this->config['siteid']
-				],
-				'multipart' => [
-					[
-						'name'     => 'xml payload',
-						'contents' => '<?xml version="1.0" encoding="utf-8"?>
+			try {
+				$response         = $this->client->request('POST', '/ws/api.dll', [
+					'headers'   => [
+						'X-MY-INDEX'                     => $index,
+						'X-EBAY-API-APP-NAME'            => $this->config['app-name'],
+						'X-EBAY-API-CERT-NAME'           => $this->config['cert-name'],
+						'X-EBAY-API-DEV-NAME'            => $this->config['dev-name'],
+						'X-EBAY-API-CALL-NAME'           => 'UploadSiteHostedPictures',
+						'X-EBAY-API-COMPATIBILITY-LEVEL' => $this->config['comp-level'],
+						'X-EBAY-API-SITEID'              => $this->config['siteid']
+					],
+					'multipart' => [
+						[
+							'name'     => 'xml payload',
+							'contents' => '<?xml version="1.0" encoding="utf-8"?>
 <UploadSiteHostedPicturesRequest xmlns="urn:ebay:apis:eBLBaseComponents">
     <RequesterCredentials>
         <ebl:eBayAuthToken xmlns:ebl="urn:ebay:apis:eBLBaseComponents">' . $this->config['auth-token'] . '</ebl:eBayAuthToken>
@@ -128,14 +93,24 @@ class upload_images {
     <ExtensionInDays>' . $this->config['ExtensionInDays'] . '</ExtensionInDays>
     <MessageID>' . $index . '</MessageID>
 </UploadSiteHostedPicturesRequest>',
-					],
-					[
-						'name'     => 'image data',
-						'contents' => $imageData,
+						],
+						[
+							'name'     => 'image data',
+							'contents' => $imageData,
+						]
 					]
-				]
-			]);
+				]);
+
+				$responses[$index]['response']     = $response;
+				$bodyContents                     = $response->getBody()->getContents();
+				$parsedResponse                   = simplexml_load_string($bodyContents);
+				$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse), TRUE);
+
+			} catch (RequestException $reason) {
+				$responses[$index]['reason'] = $reason;
+			}
 		}
+		return $responses;
 	}
 
 	/**
@@ -148,6 +123,7 @@ class upload_images {
 		$global_state     = true;
 
 		foreach ($responses as $index => $response) {
+
 			if (array_key_exists('reason', $response)) {
 				$responses_parsed[$index] = $this->returnFalse($response['reason'], $global_state);
 				continue;
@@ -181,6 +157,7 @@ class upload_images {
 			/** @var $reponse_original \GuzzleHttp\Psr7\Response */
 			$reponse_original = $response['response'];
 			if ($this->debug) {
+				/** @noinspection NullPointerExceptionInspection */
 				d($reponse_original->getBody()->getContents());
 				d($reponse_original->getHeaders());
 			}
