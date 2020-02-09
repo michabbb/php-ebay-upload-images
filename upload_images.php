@@ -32,8 +32,14 @@ class upload_images {
 		$config['comp-level']      = array_key_exists('comp-level', $config) && $config['comp-level'] ? $config['comp-level'] : 1113;
 		$config['ExtensionInDays'] = array_key_exists('ExtensionInDays', $config) && $config['ExtensionInDays'] ? $config['ExtensionInDays'] : 30;
 		$config['rewrite-index']   = array_key_exists('rewrite-index', $config) && $config['rewrite-index'] ? $config['rewrite-index'] : true;
-		$this->config              = $config;
-		$this->client              = new Client(['base_uri' => $api_uri, 'debug' => $this->debug]);
+		$config['timeout']         = array_key_exists('timeout', $config) && $config['timeout'] ? $config['timeout'] : 60;
+		$this->config = $config;
+		$this->client = new Client([
+									   'base_uri' => $api_uri,
+									   'debug'    => $this->debug,
+									   'verify'   => false
+								   ]
+		);
 	}
 
 	/**
@@ -71,6 +77,8 @@ class upload_images {
 		foreach ($images as $index => $imageData) {
 			try {
 				$response         = $this->client->request('POST', '/ws/api.dll', [
+					'timeout'   => $this->config['timeout'],
+					'verify'    => false,
 					'headers'   => [
 						'X-MY-INDEX'                     => $index,
 						'X-EBAY-API-APP-NAME'            => $this->config['app-name'],
