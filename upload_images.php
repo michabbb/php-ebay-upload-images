@@ -33,7 +33,8 @@ class upload_images {
 		$config['ExtensionInDays'] = array_key_exists('ExtensionInDays', $config) && $config['ExtensionInDays'] ? $config['ExtensionInDays'] : 30;
 		$config['rewrite-index']   = array_key_exists('rewrite-index', $config) && $config['rewrite-index'] ? $config['rewrite-index'] : true;
 		$config['timeout']         = array_key_exists('timeout', $config) && $config['timeout'] ? $config['timeout'] : 60;
-		$config['max-retry']       = array_key_exists('max-retry', $config) && $config['max-retry'] ? $config['timeout'] : 10;
+		$config['max-retry']       = array_key_exists('max-retry', $config) && $config['max-retry'] ? $config['max-retry'] : 10;
+		$config['random-wait']     = array_key_exists('random-wait', $config) && $config['random-wait'] ? $config['random-wait'] : 0;
 		$this->config              = $config;
 		$this->client              = new Client([
 													'base_uri' => $api_uri,
@@ -91,6 +92,9 @@ class upload_images {
 					$try++;
 					$responses[$index]['reason'] = $reason;
 					$responses[$index]['try']    = $try;
+				}
+				if ($this->config['random-wait']) {
+					sleep(mt_rand(3, $this->config['random-wait']));
 				}
 			}
 		}
