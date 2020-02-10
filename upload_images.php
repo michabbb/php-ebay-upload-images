@@ -114,6 +114,9 @@ class upload_images {
 				continue;
 			}
 			if (!array_key_exists('response', $response)) {
+				if ($this->debug) {
+					d($response);
+				}
 				$responses_parsed[$index] = $this->returnFalse('missing response', $global_state, $response['try']);
 				continue;
 			}
@@ -146,6 +149,7 @@ class upload_images {
 			/** @var $reponse_original \GuzzleHttp\Psr7\Response */
 			$reponse_original = $response['response'];
 			if ($this->debug) {
+				d($response);
 				/** @noinspection NullPointerExceptionInspection */
 				d($reponse_original->getBody()->getContents());
 				d($reponse_original->getHeaders());
