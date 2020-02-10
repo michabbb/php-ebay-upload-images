@@ -33,12 +33,13 @@ class upload_images {
 		$config['ExtensionInDays'] = array_key_exists('ExtensionInDays', $config) && $config['ExtensionInDays'] ? $config['ExtensionInDays'] : 30;
 		$config['rewrite-index']   = array_key_exists('rewrite-index', $config) && $config['rewrite-index'] ? $config['rewrite-index'] : true;
 		$config['timeout']         = array_key_exists('timeout', $config) && $config['timeout'] ? $config['timeout'] : 60;
-		$this->config = $config;
-		$this->client = new Client([
-									   'base_uri' => $api_uri,
-									   'debug'    => $this->debug,
-									   'verify'   => false
-								   ]
+		$config['max-retry']       = array_key_exists('max-retry', $config) && $config['max-retry'] ? $config['timeout'] : 10;
+		$this->config              = $config;
+		$this->client              = new Client([
+													'base_uri' => $api_uri,
+													'debug'    => $this->debug,
+													'verify'   => false
+												]
 		);
 	}
 
@@ -52,8 +53,8 @@ class upload_images {
 	/**
 	 * @param array $images
 	 *
-	 * @throws RuntimeException
 	 * @return array
+	 * @throws RuntimeException
 	 */
 	public function upload(array $images) {
 		$responses = $this->uploadImages($images);
@@ -75,49 +76,25 @@ class upload_images {
 	public function uploadImages(array $images) {
 		$responses = [];
 		foreach ($images as $index => $imageData) {
-			try {
-				$response         = $this->client->request('POST', '/ws/api.dll', [
-					'timeout'   => $this->config['timeout'],
-					'verify'    => false,
-					'headers'   => [
-						'X-MY-INDEX'                     => $index,
-						'X-EBAY-API-APP-NAME'            => $this->config['app-name'],
-						'X-EBAY-API-CERT-NAME'           => $this->config['cert-name'],
-						'X-EBAY-API-DEV-NAME'            => $this->config['dev-name'],
-						'X-EBAY-API-CALL-NAME'           => 'UploadSiteHostedPictures',
-						'X-EBAY-API-COMPATIBILITY-LEVEL' => $this->config['comp-level'],
-						'X-EBAY-API-SITEID'              => $this->config['siteid']
-					],
-					'multipart' => [
-						[
-							'name'     => 'xml payload',
-							'contents' => '<?xml version="1.0" encoding="utf-8"?>
-<UploadSiteHostedPicturesRequest xmlns="urn:ebay:apis:eBLBaseComponents">
-    <RequesterCredentials>
-        <ebl:eBayAuthToken xmlns:ebl="urn:ebay:apis:eBLBaseComponents">' . $this->config['auth-token'] . '</ebl:eBayAuthToken>
-    </RequesterCredentials>
-    <PictureName>' . $index . '</PictureName>
-    <PictureSet>Standard</PictureSet>
-    <ExtensionInDays>' . $this->config['ExtensionInDays'] . '</ExtensionInDays>
-    <MessageID>' . $index . '</MessageID>
-</UploadSiteHostedPicturesRequest>',
-						],
-						[
-							'name'     => 'image data',
-							'contents' => $imageData,
-						]
-					]
-				]);
-
-				$responses[$index]['response']     = $response;
-				$bodyContents                     = $response->getBody()->getContents();
-				$parsedResponse                   = simplexml_load_string($bodyContents);
-				$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse), TRUE);
-
-			} catch (RequestException $reason) {
-				$responses[$index]['reason'] = $reason;
+			$try       = 1;
+			while ($try<$this->config['max-retry']) {
+				try {
+					$response                         = $this->doRequest($index, $imageData);
+					$responses[$index]['response']    = $response;
+					$bodyContents                     = $response->getBody()->getContents();
+					$parsedResponse                   = simplexml_load_string($bodyContents);
+					$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse), TRUE);
+					$responses[$index]['try']         = $try;
+					$try                              = $this->config['max-retry'];
+					unset($responses[$index]['reason']);
+				} catch (RequestException $reason) {
+					$try++;
+					$responses[$index]['reason'] = $reason;
+					$responses[$index]['try']    = $try;
+				}
 			}
 		}
+
 		return $responses;
 	}
 
@@ -133,35 +110,36 @@ class upload_images {
 		foreach ($responses as $index => $response) {
 
 			if (array_key_exists('reason', $response)) {
-				$responses_parsed[$index] = $this->returnFalse($response['reason'], $global_state);
+				$responses_parsed[$index] = $this->returnFalse($response['reason'], $global_state, $response['try']);
 				continue;
 			}
 			if (!array_key_exists('response', $response)) {
-				$responses_parsed[$index] = $this->returnFalse('missing response', $global_state);
+				$responses_parsed[$index] = $this->returnFalse('missing response', $global_state, $response['try']);
 				continue;
 			}
 			if (
 				!array_key_exists('parsed_body', $response)
 				||
-				!array_key_exists('Ack',$response['parsed_body'])
+				!array_key_exists('Ack', $response['parsed_body'])
 			) {
-				$responses_parsed[$index] = $this->returnFalse('missing parsed_body: unable to read xml?', $global_state);
+				$responses_parsed[$index] = $this->returnFalse('missing parsed_body: unable to read xml?', $global_state, $response['try']);
 				continue;
 			}
-			if (in_array($response['parsed_body']['Ack'],['Success','Warning'])) {
+			if (in_array($response['parsed_body']['Ack'], ['Success', 'Warning'])) {
 
 				$responses_parsed[$index]          = $response['parsed_body']['SiteHostedPictureDetails'];
 				$responses_parsed[$index]['state'] = true;
+				$responses_parsed[$index]['try']   = $response['try'];
 
-				if ($response['parsed_body']['Ack']==='Warning') {
-                    $responses_parsed[$index]['Warning'] = $response['parsed_body']['Errors'];
-                }
+				if ($response['parsed_body']['Ack'] === 'Warning') {
+					$responses_parsed[$index]['Warning'] = $response['parsed_body']['Errors'];
+				}
 				continue;
 			}
-			if ($response['parsed_body']['Ack']==='Failure') {
-                $responses_parsed[$index] = $this->returnFalse( $response['parsed_body']['Errors'], $global_state);
-                continue;
-            }
+			if ($response['parsed_body']['Ack'] === 'Failure') {
+				$responses_parsed[$index] = $this->returnFalse($response['parsed_body']['Errors'], $global_state, $response['try']);
+				continue;
+			}
 			/** @var $reponse_original \GuzzleHttp\Psr7\Response */
 			$reponse_original = $response['response'];
 			if ($this->debug) {
@@ -169,7 +147,7 @@ class upload_images {
 				d($reponse_original->getBody()->getContents());
 				d($reponse_original->getHeaders());
 			}
-			throw new RuntimeException('unknown response: '.print_r($response,1));
+			throw new RuntimeException('unknown response: ' . print_r($response, 1));
 		}
 
 		return ['state' => $global_state, 'responses' => $responses_parsed];
@@ -181,10 +159,54 @@ class upload_images {
 	 *
 	 * @return array
 	 */
-	private function returnFalse($error, &$global_state) {
+	private function returnFalse($error, &$global_state, $try) {
 		$global_state = false;
 
-		return ['state' => false, 'error' => $error];
+		return ['state' => false, 'error' => $error, 'try' => $try];
+	}
+
+	/**
+	 * @param $index
+	 * @param $imageData
+	 *
+	 * @return mixed|\Psr\Http\Message\ResponseInterface
+	 * @throws \GuzzleHttp\Exception\GuzzleException
+	 */
+	private function doRequest($index, $imageData) {
+		return $this->client->request('POST', '/ws/api.dll', [
+			'timeout' => $this->config['timeout'],
+			'verify'  => false,
+			'version' => 1.0,
+
+			'headers'   => [
+				'X-MY-INDEX'                     => $index,
+				'X-EBAY-API-APP-NAME'            => $this->config['app-name'],
+				'X-EBAY-API-CERT-NAME'           => $this->config['cert-name'],
+				'X-EBAY-API-DEV-NAME'            => $this->config['dev-name'],
+				'X-EBAY-API-CALL-NAME'           => 'UploadSiteHostedPictures',
+				'X-EBAY-API-COMPATIBILITY-LEVEL' => $this->config['comp-level'],
+				'X-EBAY-API-SITEID'              => $this->config['siteid']
+			],
+			'multipart' => [
+				[
+					'name'     => 'xml payload',
+					'contents' => '<?xml version="1.0" encoding="utf-8"?>
+<UploadSiteHostedPicturesRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+    <RequesterCredentials>
+        <ebl:eBayAuthToken xmlns:ebl="urn:ebay:apis:eBLBaseComponents">' . $this->config['auth-token'] . '</ebl:eBayAuthToken>
+    </RequesterCredentials>
+    <PictureName>' . $index . '</PictureName>
+    <PictureSet>Standard</PictureSet>
+    <ExtensionInDays>' . $this->config['ExtensionInDays'] . '</ExtensionInDays>
+    <MessageID>' . $index . '</MessageID>
+</UploadSiteHostedPicturesRequest>',
+				],
+				[
+					'name'     => 'image data',
+					'contents' => $imageData,
+				]
+			]
+		]);
 	}
 
 }
