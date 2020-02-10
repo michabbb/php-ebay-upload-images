@@ -80,14 +80,18 @@ class upload_images {
 			$try       = 1;
 			while ($try<$this->config['max-retry']) {
 				try {
+					$responses[$index]['try']         = $try;
 					$response                         = $this->doRequest($index, $imageData);
 					$responses[$index]['response']    = $response;
 					$bodyContents                     = $response->getBody()->getContents();
-					$parsedResponse                   = simplexml_load_string($bodyContents);
-					$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse), TRUE);
-					$responses[$index]['try']         = $try;
-					$try                              = $this->config['max-retry'];
-					unset($responses[$index]['reason']);
+					if ($bodyContents) {
+						$parsedResponse                   = simplexml_load_string($bodyContents);
+						$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse), TRUE);
+						$try                              = $this->config['max-retry'];
+						unset($responses[$index]['reason']);
+					} else {
+						$try++;
+					}
 				} catch (RequestException $reason) {
 					$try++;
 					$responses[$index]['reason'] = $reason;
