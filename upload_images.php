@@ -122,6 +122,9 @@ class upload_images {
 				||
 				!array_key_exists('Ack', $response['parsed_body'])
 			) {
+				if ($this->debug) {
+					d($response);
+				}
 				$responses_parsed[$index] = $this->returnFalse('missing parsed_body: unable to read xml?', $global_state, $response['try']);
 				continue;
 			}
