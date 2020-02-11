@@ -36,11 +36,15 @@ class upload_images {
 		$config['max-retry']       = array_key_exists('max-retry', $config) && $config['max-retry'] ? $config['max-retry'] : 10;
 		$config['random-wait']     = array_key_exists('random-wait', $config) && $config['random-wait'] ? $config['random-wait'] : 0;
 		$this->config              = $config;
-		$this->client              = new Client([
-													'base_uri' => $api_uri,
-													'debug'    => $this->debug,
-													'verify'   => false
-												]
+		$this->client = new Client([
+									   'base_uri' => $api_uri,
+									   'debug'    => $this->debug,
+									   'verify'   => false,
+									   'curl'     => [
+										   CURLOPT_TCP_KEEPALIVE => 10,
+										   CURLOPT_TCP_KEEPIDLE  => 10
+									   ]
+								   ]
 		);
 	}
 
@@ -86,9 +90,11 @@ class upload_images {
 					$bodyContents                     = $response->getBody()->getContents();
 					if ($bodyContents) {
 						$parsedResponse                   = simplexml_load_string($bodyContents);
-						$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse), TRUE);
-						$try                              = $this->config['max-retry'];
-						unset($responses[$index]['reason']);
+						if ($parsedResponse) {
+							$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse), TRUE);
+							$try                              = $this->config['max-retry'];
+							unset($responses[$index]['reason']);
+						}
 					} else {
 						$try++;
 					}
@@ -199,8 +205,10 @@ class upload_images {
 				'X-EBAY-API-CERT-NAME'           => $this->config['cert-name'],
 				'X-EBAY-API-DEV-NAME'            => $this->config['dev-name'],
 				'X-EBAY-API-CALL-NAME'           => 'UploadSiteHostedPictures',
+				'X-EBAY-API-RESPONSE-ENCODING'   => 'XML',
+				'X-EBAY-API-DETAIL-LEVEL'        => 0,
 				'X-EBAY-API-COMPATIBILITY-LEVEL' => $this->config['comp-level'],
-				'X-EBAY-API-SITEID'              => $this->config['siteid']
+				'X-EBAY-API-SITEID'              => 0,
 			],
 			'multipart' => [
 				[
