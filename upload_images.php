@@ -37,12 +37,14 @@ class upload_images {
 		$config['random-wait']     = array_key_exists('random-wait', $config) && $config['random-wait'] ? $config['random-wait'] : 0;
 		$this->config              = $config;
 		$this->client = new Client([
-									   'base_uri' => $api_uri,
-									   'debug'    => $this->debug,
-									   'verify'   => false,
-									   'curl'     => [
+									   'base_uri'        => $api_uri,
+									   'debug'           => $this->debug,
+									   'connect_timeout' => $config['timeout'],
+									   'verify'          => false,
+									   'curl'            => [
 										   CURLOPT_TCP_KEEPALIVE => 10,
-										   CURLOPT_TCP_KEEPIDLE  => 10
+										   CURLOPT_TCP_KEEPIDLE  => 10,
+										   CURLOPT_TIMEOUT       => $config['timeout']
 									   ]
 								   ]
 		);
@@ -223,10 +225,17 @@ class upload_images {
     <ExtensionInDays>' . $this->config['ExtensionInDays'] . '</ExtensionInDays>
     <MessageID>' . $index . '</MessageID>
 </UploadSiteHostedPicturesRequest>',
+					'headers' => [
+						'Content-Type' => 'text/xml;charset=utf-8'
+					]
 				],
 				[
 					'name'     => 'image data',
 					'contents' => $imageData,
+					'headers' => [
+						'Content-Transfer-Encoding' => 'binary',
+						'Content-Type'              => 'application/octet-stream'
+					]
 				]
 			]
 		]);
