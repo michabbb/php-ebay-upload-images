@@ -37,8 +37,24 @@ class upload_images {
 		$config['comp-level']      = array_key_exists('comp-level', $config) && $config['comp-level'] ? $config['comp-level'] : 1113;
 		$config['ExtensionInDays'] = array_key_exists('ExtensionInDays', $config) && $config['ExtensionInDays'] ? $config['ExtensionInDays'] : 30;
 		$config['rewrite-index']   = array_key_exists('rewrite-index', $config) && $config['rewrite-index'] ? $config['rewrite-index'] : true;
+		$config['timeout']         = array_key_exists('timeout', $config) && $config['timeout'] ? $config['timeout'] : 60;
+		$config['max-retry']       = array_key_exists('max-retry', $config) && $config['max-retry'] ? $config['max-retry'] : 10;
+		$config['random-wait']     = array_key_exists('random-wait', $config) && $config['random-wait'] ? $config['random-wait'] : 0;
+		$config['tcp-keepalive']   = array_key_exists('tcp-keepalive', $config) && $config['tcp-keepalive'] ? $config['tcp-keepalive'] : 10;
+		$config['tcp-keepidle']    = array_key_exists('tcp-keepidle', $config) && $config['tcp-keepidle'] ? $config['tcp-keepidle'] : 10;
 		$this->config              = $config;
-		$this->client              = new Client(['base_uri' => $api_uri, 'debug' => $this->debug]);
+		$this->client = new Client([
+									   'base_uri'        => $api_uri,
+									   'debug'           => $this->debug,
+									   'connect_timeout' => $config['timeout'],
+									   'verify'          => false,
+									   'curl'            => [
+										   CURLOPT_TCP_KEEPALIVE => $this->config['tcp-keepalive'],
+										   CURLOPT_TCP_KEEPIDLE  => $this->config['tcp-keepidle'],
+										   CURLOPT_TIMEOUT       => $config['timeout']
+									   ]
+								   ]
+		);
 	}
 
 	/**
@@ -106,11 +122,16 @@ class upload_images {
 	public function prepareRequest(array $images) {
 		foreach ($images as $index => $imageData) {
 			$this->requests[$index] = $this->client->requestAsync('POST', '/ws/api.dll', [
+				'timeout' => $this->config['timeout'],
+				'verify'  => false,
+				'version' => 1.0,
 				'headers'   => [
 					'X-MY-INDEX'                     => $index,
 					'X-EBAY-API-APP-NAME'            => $this->config['app-name'],
 					'X-EBAY-API-CERT-NAME'           => $this->config['cert-name'],
 					'X-EBAY-API-DEV-NAME'            => $this->config['dev-name'],
+					'X-EBAY-API-RESPONSE-ENCODING'   => 'XML',
+					'X-EBAY-API-DETAIL-LEVEL'        => 0,
 					'X-EBAY-API-CALL-NAME'           => 'UploadSiteHostedPictures',
 					'X-EBAY-API-COMPATIBILITY-LEVEL' => $this->config['comp-level'],
 					'X-EBAY-API-SITEID'              => $this->config['siteid']
@@ -128,10 +149,17 @@ class upload_images {
     <ExtensionInDays>' . $this->config['ExtensionInDays'] . '</ExtensionInDays>
     <MessageID>' . $index . '</MessageID>
 </UploadSiteHostedPicturesRequest>',
+						'headers' => [
+							'Content-Type' => 'text/xml;charset=utf-8'
+						]
 					],
 					[
 						'name'     => 'image data',
 						'contents' => $imageData,
+						'headers' => [
+							'Content-Transfer-Encoding' => 'binary',
+							'Content-Type'              => 'application/octet-stream'
+						]
 					]
 				]
 			]);
