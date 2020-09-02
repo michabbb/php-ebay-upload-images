@@ -2,15 +2,19 @@
 
 namespace macropage\ebaysdk\trading\upload;
 
+use Exception;
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Psr7\Response;
+use JsonException;
+use Psr\Http\Message\ResponseInterface;
 use RuntimeException;
 
 class upload_images {
 
 	private array  $config;
 	private Client $client;
-	private array $requests;
 	private bool   $debug;
 
 	/**
@@ -58,13 +62,7 @@ class upload_images {
 		$this->client = $client;
 	}
 
-	/**
-	 * @param array $images
-	 *
-	 * @return array
-	 * @throws RuntimeException
-	 */
-	public function upload(array $images) {
+	public function upload(array $images): array {
 		$responses = $this->uploadImages($images);
 		$this->parseResponses($responses);
 
@@ -75,13 +73,7 @@ class upload_images {
 		return $this->parseResponses($responses);
 	}
 
-	/**
-	 * @param array $images
-	 *
-	 * @return array
-	 * @throws \GuzzleHttp\Exception\GuzzleException
-	 */
-	public function uploadImages(array $images) {
+	public function uploadImages(array $images): array {
 		$responses = [];
 		foreach ($images as $index => $imageData) {
 			$try       = 1;
@@ -94,7 +86,7 @@ class upload_images {
 					if ($bodyContents) {
 						$parsedResponse                   = simplexml_load_string($bodyContents);
 						if ($parsedResponse) {
-							$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse), TRUE);
+							$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse, JSON_THROW_ON_ERROR), TRUE, 512, JSON_THROW_ON_ERROR);
 							$try                              = $this->config['max-retry'];
 							unset($responses[$index]['reason']);
 						}
@@ -105,9 +97,19 @@ class upload_images {
 					$try++;
 					$responses[$index]['reason'] = $reason;
 					$responses[$index]['try']    = $try;
+				} catch (JsonException $e) {
+					throw new RuntimeException($e->getMessage());
+				} catch (GuzzleException $e) {
+					$try++;
+					$responses[$index]['reason'] = $e->getMessage();
+					$responses[$index]['try']    = $try;
 				}
 				if ($this->config['random-wait']) {
-					sleep(mt_rand(3, $this->config['random-wait']));
+					try {
+						sleep(random_int(3, $this->config['random-wait']));
+					} catch (Exception $e) {
+						throw new RuntimeException($e->getMessage());
+					}
 				}
 			}
 		}
@@ -120,7 +122,7 @@ class upload_images {
 	 *
 	 * @return array
 	 */
-	private function parseResponses(array $responses) {
+	private function parseResponses(array $responses): array {
 		$responses_parsed = [];
 		$global_state     = true;
 
@@ -163,11 +165,10 @@ class upload_images {
 				$responses_parsed[$index] = $this->returnFalse($response['parsed_body']['Errors'], $global_state, $response['try']);
 				continue;
 			}
-			/** @var $reponse_original \GuzzleHttp\Psr7\Response */
+			/** @var $reponse_original Response */
 			$reponse_original = $response['response'];
 			if ($this->debug) {
 				d($response);
-				/** @noinspection NullPointerExceptionInspection */
 				d($reponse_original->getBody()->getContents());
 				d($reponse_original->getHeaders());
 			}
@@ -181,9 +182,11 @@ class upload_images {
 	 * @param $error
 	 * @param $global_state
 	 *
+	 * @param $try
+	 *
 	 * @return array
 	 */
-	private function returnFalse($error, &$global_state, $try) {
+	private function returnFalse($error, &$global_state, $try): array {
 		$global_state = false;
 
 		return ['state' => false, 'error' => $error, 'try' => $try];
@@ -193,10 +196,10 @@ class upload_images {
 	 * @param $index
 	 * @param $imageData
 	 *
-	 * @return mixed|\Psr\Http\Message\ResponseInterface
-	 * @throws \GuzzleHttp\Exception\GuzzleException
+	 * @return ResponseInterface
+	 * @throws GuzzleException
 	 */
-	private function doRequest($index, $imageData) {
+	private function doRequest($index, $imageData): ResponseInterface {
 		return $this->client->request('POST', '/ws/api.dll', [
 			'timeout' => $this->config['timeout'],
 			'verify'  => false,
