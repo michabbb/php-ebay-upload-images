@@ -28,7 +28,6 @@ d($responses);
   
 some more config keys you can use:
 
-- concurrency (number of parallel uploads)
 - comp-level (X-EBAY-API-COMPATIBILITY-LEVEL)
 - ExtensionInDays ([see ebay docu](https://developer.ebay.com/devzone/xml/docs/reference/ebay/UploadSiteHostedPictures.html#Request.ExtensionInDays))
 
