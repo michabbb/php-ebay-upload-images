@@ -11,10 +11,10 @@ use RuntimeException;
 
 class upload_images {
 
-	private $config;
-	private $client;
-	private $requests;
-	private $debug;
+	private array  $config;
+	private Client $client;
+	private array $requests;
+	private bool   $debug;
 
 	/**
 	 * uploadImages constructor.
@@ -60,7 +60,7 @@ class upload_images {
 	/**
 	 * @param Client $client
 	 */
-	public function setClient(Client $client) {
+	public function setClient(Client $client): void {
 		$this->client = $client;
 	}
 
@@ -70,7 +70,7 @@ class upload_images {
 	 * @throws RuntimeException
 	 * @return array
 	 */
-	public function upload(array $images) {
+	public function upload(array $images): array {
 		$this->prepareRequest($images);
 		$prepared_requests = $this->requests;
 
@@ -97,7 +97,7 @@ class upload_images {
 				$responses[$index]['response']    = $response;
 				$bodyContents = $response->getBody()->getContents();
 				$parsedResponse                   = simplexml_load_string($bodyContents);
-				$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse), TRUE);
+				$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse, JSON_THROW_ON_ERROR), TRUE, 512, JSON_THROW_ON_ERROR);
 			},
 			'rejected'    => static function (RequestException $reason) {
 				$index                       = $reason->getRequest()->getHeaders()['X-MY-INDEX'][0];
@@ -119,7 +119,7 @@ class upload_images {
 	/**
 	 * @param $images
 	 */
-	public function prepareRequest(array $images) {
+	public function prepareRequest(array $images): void {
 		foreach ($images as $index => $imageData) {
 			$this->requests[$index] = $this->client->requestAsync('POST', '/ws/api.dll', [
 				'timeout' => $this->config['timeout'],
@@ -171,7 +171,7 @@ class upload_images {
 	 *
 	 * @return array
 	 */
-	private function parseResponses(array $responses) {
+	private function parseResponses(array $responses): array {
 		$responses_parsed = [];
 		$global_state     = true;
 
@@ -206,7 +206,7 @@ class upload_images {
                 $responses_parsed[$index] = $this->returnFalse( $response['parsed_body']['Errors'], $global_state);
                 continue;
             }
-			/** @var $reponse_original \GuzzleHttp\Psr7\Response */
+			/** @var $reponse_original Response */
 			$reponse_original = $response['response'];
 			if ($this->debug) {
 				d($reponse_original->getBody()->getContents());
@@ -224,7 +224,7 @@ class upload_images {
 	 *
 	 * @return array
 	 */
-	private function returnFalse($error, &$global_state) {
+	private function returnFalse($error, &$global_state): array {
 		$global_state = false;
 
 		return ['state' => false, 'error' => $error];
