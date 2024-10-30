@@ -11,215 +11,197 @@ use JsonException;
 use Psr\Http\Message\ResponseInterface;
 use RuntimeException;
 
-class upload_images {
+class upload_images
+{
 
-	private array  $config;
-	private Client $client;
-	private bool   $debug;
+    private readonly array $config;
+    private readonly bool  $debug;
+    private Client         $client;
 
-	/**
-	 * uploadImages constructor.
-	 *
-	 * @param      $config
-	 * @param bool $live
-	 */
-	public function __construct(array $config, $live = true) {
-		foreach (['app-name', 'cert-name', 'dev-name', 'siteid', 'auth-token'] as $key) {
-			if (!array_key_exists($key, $config)) {
-				throw new RuntimeException('missing config key: ' . $config);
-			}
-			if ($key === 'siteid' && !preg_match('/^\d+$/', $config[$key])) {
-				throw new RuntimeException('for siteid please use numbers, not letters!');
-			}
-		}
-		$api_uri                   = $live ? 'https://api.ebay.com/' : 'https://api.sandbox.ebay.com/';
-		$this->debug               = (array_key_exists('debug', $config) && $config['debug']);
-		$config['comp-level']      = array_key_exists('comp-level', $config) && $config['comp-level'] ? $config['comp-level'] : 1113;
-		$config['ExtensionInDays'] = array_key_exists('ExtensionInDays', $config) && $config['ExtensionInDays'] ? $config['ExtensionInDays'] : 30;
-		$config['rewrite-index']   = array_key_exists('rewrite-index', $config) && $config['rewrite-index'] ? $config['rewrite-index'] : true;
-		$config['timeout']         = array_key_exists('timeout', $config) && $config['timeout'] ? $config['timeout'] : 60;
-		$config['max-retry']       = array_key_exists('max-retry', $config) && $config['max-retry'] ? $config['max-retry'] : 10;
-		$config['random-wait']     = array_key_exists('random-wait', $config) && $config['random-wait'] ? $config['random-wait'] : 0;
-		$this->config              = $config;
-		$this->client = new Client([
-									   'base_uri'        => $api_uri,
-									   'debug'           => $this->debug,
-									   'connect_timeout' => $config['timeout'],
-									   'verify'          => false,
-									   'curl'            => [
-										   CURLOPT_TCP_KEEPALIVE => 10,
-										   CURLOPT_TCP_KEEPIDLE  => 10,
-										   CURLOPT_TIMEOUT       => $config['timeout']
-									   ]
-								   ]
-		);
-	}
+    public function __construct(array $config, bool $live = true)
+    {
+        foreach (['app-name', 'cert-name', 'dev-name', 'siteid', 'auth-token'] as $key) {
+            if (!array_key_exists($key, $config)) {
+                throw new RuntimeException('missing config key: ' . $key);
+            }
+            if ($key === 'siteid' && !preg_match('/^\d+$/', $config[$key])) {
+                throw new RuntimeException('for siteid please use numbers, not letters!');
+            }
+        }
+        $api_uri                   = $live ? 'https://api.ebay.com/' : 'https://api.sandbox.ebay.com/';
+        $this->debug               = (array_key_exists('debug', $config) && $config['debug']);
+        $config['comp-level']      = array_key_exists('comp-level', $config) && $config['comp-level'] ? $config['comp-level'] : 1113;
+        $config['ExtensionInDays'] = array_key_exists('ExtensionInDays', $config) && $config['ExtensionInDays'] ? $config['ExtensionInDays'] : 30;
+        $config['rewrite-index']   = array_key_exists('rewrite-index', $config) && $config['rewrite-index'] ? $config['rewrite-index'] : true;
+        $config['timeout']         = array_key_exists('timeout', $config) && $config['timeout'] ? $config['timeout'] : 60;
+        $config['max-retry']       = array_key_exists('max-retry', $config) && $config['max-retry'] ? $config['max-retry'] : 10;
+        $config['random-wait']     = array_key_exists('random-wait', $config) && $config['random-wait'] ? $config['random-wait'] : 0;
+        $this->config              = $config;
+        $this->client              = new Client([
+                                                    'base_uri'        => $api_uri,
+                                                    'debug'           => $this->debug,
+                                                    'connect_timeout' => $config['timeout'],
+                                                    'verify'          => false,
+                                                    'curl'            => [
+                                                        CURLOPT_TCP_KEEPALIVE => 10,
+                                                        CURLOPT_TCP_KEEPIDLE  => 10,
+                                                        CURLOPT_TIMEOUT       => $config['timeout']
+                                                    ]
+                                                ]
+        );
+    }
 
-	/**
-	 * @param Client $client
-	 */
-	public function setClient(Client $client): void {
-		$this->client = $client;
-	}
+    public function setClient(Client $client): void
+    {
+        $this->client = $client;
+    }
 
-	public function upload(array $images): array {
-		$responses = $this->uploadImages($images);
-		$this->parseResponses($responses);
+    public function upload(array $images): array
+    {
+        $responses = $this->uploadImages($images);
+        $this->parseResponses($responses);
 
-		if (!count($responses)) {
-			throw new RuntimeException('unable to get any responses');
-		}
+        if (!count($responses)) {
+            throw new RuntimeException('unable to get any responses');
+        }
 
-		return $this->parseResponses($responses);
-	}
+        return $this->parseResponses($responses);
+    }
 
-	public function uploadImages(array $images): array {
-		$responses = [];
-		foreach ($images as $index => $imageData) {
-			$try       = 1;
-			while ($try<$this->config['max-retry']) {
-				try {
-					$responses[$index]['try']         = $try;
-					$response                         = $this->doRequest($index, $imageData);
-					$responses[$index]['response']    = $response;
-					$bodyContents                     = $response->getBody()->getContents();
-					if ($bodyContents) {
-						$parsedResponse                   = simplexml_load_string($bodyContents);
-						if ($parsedResponse) {
-							$responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse, JSON_THROW_ON_ERROR), TRUE, 512, JSON_THROW_ON_ERROR);
-							$try                              = $this->config['max-retry'];
-							unset($responses[$index]['reason']);
-						}
-					} else {
-						$try++;
-					}
-				} catch (RequestException $reason) {
-					$try++;
-					$responses[$index]['reason'] = $reason;
-					$responses[$index]['try']    = $try;
-				} catch (JsonException $e) {
-					throw new RuntimeException($e->getMessage());
-				} catch (GuzzleException $e) {
-					$try++;
-					$responses[$index]['reason'] = $e->getMessage();
-					$responses[$index]['try']    = $try;
-				}
-				if ($this->config['random-wait']) {
-					try {
-						sleep(random_int(3, $this->config['random-wait']));
-					} catch (Exception $e) {
-						throw new RuntimeException($e->getMessage());
-					}
-				}
-			}
-		}
+    public function uploadImages(array $images): array
+    {
+        $responses = [];
+        foreach ($images as $index => $imageData) {
+            $try = 1;
+            while ($try < $this->config['max-retry']) {
+                try {
+                    $responses[$index]['try']      = $try;
+                    $response                      = $this->doRequest($index, $imageData);
+                    $responses[$index]['response'] = $response;
+                    $bodyContents                  = $response->getBody()->getContents();
+                    if ($bodyContents) {
+                        $parsedResponse = simplexml_load_string($bodyContents);
+                        if ($parsedResponse) {
+                            $responses[$index]['parsed_body'] = json_decode(json_encode((array)$parsedResponse, JSON_THROW_ON_ERROR), TRUE, 512, JSON_THROW_ON_ERROR);
+                            $try                              = $this->config['max-retry'];
+                            unset($responses[$index]['reason']);
+                        }
+                    } else {
+                        $try++;
+                    }
+                } catch (RequestException $reason) {
+                    $try++;
+                    $responses[$index]['reason'] = $reason;
+                    $responses[$index]['try']    = $try;
+                } catch (JsonException $e) {
+                    throw new RuntimeException($e->getMessage());
+                } catch (GuzzleException $e) {
+                    $try++;
+                    $responses[$index]['reason'] = $e->getMessage();
+                    $responses[$index]['try']    = $try;
+                }
+                if ($this->config['random-wait']) {
+                    try {
+                        sleep(random_int(3, $this->config['random-wait']));
+                    } catch (Exception $e) {
+                        throw new RuntimeException($e->getMessage());
+                    }
+                }
+            }
+        }
 
-		return $responses;
-	}
+        return $responses;
+    }
 
-	/**
-	 * @param array $responses
-	 *
-	 * @return array
-	 */
-	private function parseResponses(array $responses): array {
-		$responses_parsed = [];
-		$global_state     = true;
+    private function parseResponses(array $responses): array
+    {
+        $responses_parsed = [];
+        $global_state     = true;
 
-		foreach ($responses as $index => $response) {
+        foreach ($responses as $index => $response) {
 
-			if (array_key_exists('reason', $response)) {
-				$responses_parsed[$index] = $this->returnFalse($response['reason'], $global_state, $response['try']);
-				continue;
-			}
-			if (!array_key_exists('response', $response)) {
-				if ($this->debug) {
-					d($response);
-				}
-				$responses_parsed[$index] = $this->returnFalse('missing response', $global_state, $response['try']);
-				continue;
-			}
-			if (
-				!array_key_exists('parsed_body', $response)
-				||
-				!array_key_exists('Ack', $response['parsed_body'])
-			) {
-				if ($this->debug) {
-					d($response);
-				}
-				$responses_parsed[$index] = $this->returnFalse('missing parsed_body: unable to read xml?', $global_state, $response['try']);
-				continue;
-			}
-			if (in_array($response['parsed_body']['Ack'], ['Success', 'Warning'])) {
+            if (array_key_exists('reason', $response)) {
+                $responses_parsed[$index] = $this->returnFalse($response['reason'], $global_state, $response['try']);
+                continue;
+            }
+            if (!array_key_exists('response', $response)) {
+                if ($this->debug) {
+                    d($response);
+                }
+                $responses_parsed[$index] = $this->returnFalse('missing response', $global_state, $response['try']);
+                continue;
+            }
+            if (
+                !array_key_exists('parsed_body', $response)
+                ||
+                !array_key_exists('Ack', $response['parsed_body'])
+            ) {
+                if ($this->debug) {
+                    d($response);
+                }
+                $responses_parsed[$index] = $this->returnFalse('missing parsed_body: unable to read xml?', $global_state, $response['try']);
+                continue;
+            }
+            if (in_array($response['parsed_body']['Ack'], ['Success', 'Warning'])) {
 
-				$responses_parsed[$index]          = $response['parsed_body']['SiteHostedPictureDetails'];
-				$responses_parsed[$index]['state'] = true;
-				$responses_parsed[$index]['try']   = $response['try'];
+                $responses_parsed[$index]          = $response['parsed_body']['SiteHostedPictureDetails'];
+                $responses_parsed[$index]['state'] = true;
+                $responses_parsed[$index]['try']   = $response['try'];
 
-				if ($response['parsed_body']['Ack'] === 'Warning') {
-					$responses_parsed[$index]['Warning'] = $response['parsed_body']['Errors'];
-				}
-				continue;
-			}
-			if ($response['parsed_body']['Ack'] === 'Failure') {
-				$responses_parsed[$index] = $this->returnFalse($response['parsed_body']['Errors'], $global_state, $response['try']);
-				continue;
-			}
-			/** @var $reponse_original Response */
-			$reponse_original = $response['response'];
-			if ($this->debug) {
-				d($response);
-				d($reponse_original->getBody()->getContents());
-				d($reponse_original->getHeaders());
-			}
-			throw new RuntimeException('unknown response: ' . print_r($response, 1));
-		}
+                if ($response['parsed_body']['Ack'] === 'Warning') {
+                    $responses_parsed[$index]['Warning'] = $response['parsed_body']['Errors'];
+                }
+                continue;
+            }
+            if ($response['parsed_body']['Ack'] === 'Failure') {
+                $responses_parsed[$index] = $this->returnFalse($response['parsed_body']['Errors'], $global_state, $response['try']);
+                continue;
+            }
+            /** @var $reponse_original Response */
+            $reponse_original = $response['response'];
+            if ($this->debug) {
+                d($response);
+                d($reponse_original->getBody()->getContents());
+                d($reponse_original->getHeaders());
+            }
+            throw new RuntimeException('unknown response: ' . print_r($response, 1));
+        }
 
-		return ['state' => $global_state, 'responses' => $responses_parsed];
-	}
+        return ['state' => $global_state, 'responses' => $responses_parsed];
+    }
 
-	/**
-	 * @param $error
-	 * @param $global_state
-	 *
-	 * @param $try
-	 *
-	 * @return array
-	 */
-	private function returnFalse($error, &$global_state, $try): array {
-		$global_state = false;
+    private function returnFalse(string|array $error, bool &$global_state, int $try): array
+    {
+        $global_state = false;
 
-		return ['state' => false, 'error' => $error, 'try' => $try];
-	}
+        return ['state' => false, 'error' => $error, 'try' => $try];
+    }
 
-	/**
-	 * @param $index
-	 * @param $imageData
-	 *
-	 * @return ResponseInterface
-	 * @throws GuzzleException
-	 */
-	private function doRequest($index, $imageData): ResponseInterface {
-		return $this->client->request('POST', '/ws/api.dll', [
-			'timeout' => $this->config['timeout'],
-			'verify'  => false,
-			'version' => 1.0,
+    /**
+     * @throws \GuzzleHttp\Exception\GuzzleException
+     */
+    private function doRequest(int $index, string $imageData): ResponseInterface
+    {
+        return $this->client->request('POST', '/ws/api.dll', [
+            'timeout' => $this->config['timeout'],
+            'verify'  => false,
+            'version' => 1.1,
 
-			'headers'   => [
-				'X-MY-INDEX'                     => $index,
-				'X-EBAY-API-APP-NAME'            => $this->config['app-name'],
-				'X-EBAY-API-CERT-NAME'           => $this->config['cert-name'],
-				'X-EBAY-API-DEV-NAME'            => $this->config['dev-name'],
-				'X-EBAY-API-CALL-NAME'           => 'UploadSiteHostedPictures',
-				'X-EBAY-API-RESPONSE-ENCODING'   => 'XML',
-				'X-EBAY-API-DETAIL-LEVEL'        => 0,
-				'X-EBAY-API-COMPATIBILITY-LEVEL' => $this->config['comp-level'],
-				'X-EBAY-API-SITEID'              => 0,
-			],
-			'multipart' => [
-				[
-					'name'     => 'xml payload',
-					'contents' => '<?xml version="1.0" encoding="utf-8"?>
+            'headers'   => [
+                'X-MY-INDEX'                     => $index,
+                'X-EBAY-API-APP-NAME'            => $this->config['app-name'],
+                'X-EBAY-API-CERT-NAME'           => $this->config['cert-name'],
+                'X-EBAY-API-DEV-NAME'            => $this->config['dev-name'],
+                'X-EBAY-API-CALL-NAME'           => 'UploadSiteHostedPictures',
+                'X-EBAY-API-RESPONSE-ENCODING'   => 'XML',
+                'X-EBAY-API-DETAIL-LEVEL'        => 0,
+                'X-EBAY-API-COMPATIBILITY-LEVEL' => $this->config['comp-level'],
+                'X-EBAY-API-SITEID'              => 0,
+            ],
+            'multipart' => [
+                [
+                    'name'     => 'xml payload',
+                    'contents' => '<?xml version="1.0" encoding="utf-8"?>
 <UploadSiteHostedPicturesRequest xmlns="urn:ebay:apis:eBLBaseComponents">
     <RequesterCredentials>
         <ebl:eBayAuthToken xmlns:ebl="urn:ebay:apis:eBLBaseComponents">' . $this->config['auth-token'] . '</ebl:eBayAuthToken>
@@ -229,20 +211,20 @@ class upload_images {
     <ExtensionInDays>' . $this->config['ExtensionInDays'] . '</ExtensionInDays>
     <MessageID>' . $index . '</MessageID>
 </UploadSiteHostedPicturesRequest>',
-					'headers' => [
-						'Content-Type' => 'text/xml;charset=utf-8'
-					]
-				],
-				[
-					'name'     => 'image data',
-					'contents' => $imageData,
-					'headers' => [
-						'Content-Transfer-Encoding' => 'binary',
-						'Content-Type'              => 'application/octet-stream'
-					]
-				]
-			]
-		]);
-	}
+                    'headers'  => [
+                        'Content-Type' => 'text/xml;charset=utf-8'
+                    ]
+                ],
+                [
+                    'name'     => 'image data',
+                    'contents' => $imageData,
+                    'headers'  => [
+                        'Content-Transfer-Encoding' => 'binary',
+                        'Content-Type'              => 'application/octet-stream'
+                    ]
+                ]
+            ]
+        ]);
+    }
 
 }
