@@ -8,17 +8,18 @@ $images[] = file_get_contents('/tmp/img2.png');
 //$images[] = 'this should not work'; <-- test this so see how things fail
 
 $EbayUploadImages = new upload_images([
-										  'app-name'   => 'xxxxxxxx',
-										  'cert-name'  => 'xxxxxxxx',
-										  'dev-name'   => 'xxxxxxxx',
-										  'siteid'     => 77,
-										  'auth-token' => 'xxxxxxxx'
-									  ]);
+                          'app-name'   => 'xxxxxxxx',
+                          'cert-name'  => 'xxxxxxxx',
+                          'dev-name'   => 'xxxxxxxx',
+                          'siteid'     => 77,
+                          'auth-token' => 'xxxxxxxx'
+]);
+
 $responses        = $EbayUploadImages->upload($images);
 d($responses);
 ```
 
-![#f03c15](https://placehold.it/15/f03c15/000000?text=+) **notice:** `siteid` needs to be numbers, if you use letters you might get very strange SSL errors! 
+**notice:** `siteid` needs to be numbers, if you use letters you might get very strange SSL errors! 
 
 ### what you (should) get
 
@@ -35,9 +36,11 @@ some more config keys you can use:
 
 **hire me:** `info@macropage.de`
 
-[![Follow me](https://rawcdn.githack.com/michabbb/ebay-oauth-playground/b4eaa137aa00ff700ac18880baa0002c661857e6/docs/img/linkedin.png)](https://twitter.com/michabbb)  
+### Follow me on Social Media
 
-[![Follow me](https://rawcdn.githack.com/michabbb/ebay-oauth-playground/b4eaa137aa00ff700ac18880baa0002c661857e6/docs/img/twitter.png)](https://www.linkedin.com/in/macropage/)
+[Mastodon](https://social.vivaldi.net/@michabbb)  
+[LinkedIn](https://www.linkedin.com/in/macropage/)  
+[BlueSky](https://bsky.app/profile/michabbb.bsky.social)  
+[X](https://x.com/michabbb)  
 
-[![Follow me](https://rawcdn.githack.com/michabbb/ebay-oauth-playground/b4eaa137aa00ff700ac18880baa0002c661857e6/docs/img/xing.png)](https://xing.com/profile/Michael_Bladowski/cv)
 
